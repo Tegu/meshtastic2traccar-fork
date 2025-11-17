@@ -1,0 +1,5 @@
+meshtastic
+protobuf
+paho-mqtt
+cryptography
+apscheduler

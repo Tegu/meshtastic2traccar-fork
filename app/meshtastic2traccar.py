@@ -189,11 +189,22 @@ class Meshtastic2Traccar():
         course = 0
         fixTime =  pl.time
 
-        query_string = f"id={i_from}&lat={lat}&lon={lon}&alt={alt}&accuracy={accuracy}&speed={speed}&bearing={course}" \
-        f"&meshtastic_chan={i_chan}&meshtastic_topic={i_short_topic}&meshtastic_gateway={i_gateway}&meshtastic_hops={i_hops}"
+        params = {
+            "id": i_from,
+            "lat": lat,
+            "lon": lon,
+            "alt": alt,
+            "accuracy": accuracy,
+            "speed": speed,
+            "bearing": course,
+            "meshtastic_chan": i_chan,
+            "meshtastic_topic": i_short_topic,
+            "meshtastic_gateway": i_gateway,
+            "meshtastic_hops": i_hops,
+        }
 
         try:
-            self.tx_to_traccar(query_string)
+            self.tx_to_traccar(params)
         except ValueError:
             logging.warning(f"id={i_from}")
 
@@ -356,12 +367,12 @@ class Meshtastic2Traccar():
 
 
 
-    def tx_to_traccar(self, query: str):
+    def tx_to_traccar(self, params: dict):
         # Send position report to Traccar server
-        logging.debug(f"tx_to_traccar({query})")
-        url = f"{self.TraccarOsmand}/?{query}"
+        logging.debug(f"tx_to_traccar({params})")
+        url = f"{self.TraccarOsmand}/"
         try:
-            post = requests.post(url)
+            post = requests.post(url, params=params)
             logging.debug(f"POST {post.status_code} {post.reason} - {post.content.decode()}")
             if post.status_code == 400:
                 logging.warning(

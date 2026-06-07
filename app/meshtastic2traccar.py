@@ -6,10 +6,8 @@ import signal
 
 import requests
 
-from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime
 from urllib.parse import urlparse, urlunparse
-from requests.auth import HTTPBasicAuth
 import json
 import re
 
@@ -32,15 +30,12 @@ import base64
 
 
 
-DEFAULT_TRACCAR_HOST = 'http://traccar:8082'
-DEFAULT_TRACCAR_KEYWORD = 'meshtastic'
-DEFAULT_TRACCAR_INTERVAL = 60
+DEFAULT_TRACCAR_OSMAND = 'http://traccar:5055'
 
 logging.getLogger(__name__)
 logging.basicConfig(format="%(asctime)s: %(message)s", level=logging.INFO, datefmt="%H:%M:%S")
 logging.getLogger("requests").setLevel(logging.WARNING)
 logging.getLogger("urllib3").setLevel(logging.WARNING)
-logging.getLogger('apscheduler').setLevel(logging.WARNING)
 
 
 
@@ -49,15 +44,7 @@ class Meshtastic2Traccar():
         # Initialize the class.
         super().__init__()
 
-        self.TraccarHost = conf.get("TraccarHost")
-        self.TraccarUser = conf.get("TraccarUser")
-        self.TraccarPassword = conf.get("TraccarPassword")
-        self.TraccarKeyword = conf.get("TraccarKeyword")
-        self.AprsCallsign = conf.get("AprsCallsign")
-        self.AprsHost = conf.get("AprsHost")
         self.TraccarOsmand = conf.get("TraccarOsmand")
-
-        self.filter_dict = {}
 
         self.mqtt_broker = conf.get("MqttServer") or "mqtt.meshtastic.org"
         self.mqtt_port = int(conf.get("MqttPort") or "1883")
@@ -146,11 +133,6 @@ class Meshtastic2Traccar():
         i_hops = i_hopstart - i_hoplimit
 
 
-        #filtra per mittente
-        # print(list(self.filter_dict.keys()))
-        if not i_from in list(self.filter_dict.keys()):
-            return()
-
         # trova duplicati
         isdup = self.duplicated(getattr(mp, "id"))
         if isdup:
@@ -207,15 +189,13 @@ class Meshtastic2Traccar():
         course = 0
         fixTime =  pl.time
 
-        dev_ids = self.filter_dict.get(i_from)
-        for dev_id in dev_ids:
-            query_string = f"id={dev_id}&lat={lat}&lon={lon}&alt={alt}&accuracy={accuracy}&speed={speed}&bearing={course}" \
-            f"&meshtastic_chan={i_chan}&meshtastic_topic={i_short_topic}&meshtastic_gateway={i_gateway}&meshtastic_hops={i_hops}"
+        query_string = f"id={i_from}&lat={lat}&lon={lon}&alt={alt}&accuracy={accuracy}&speed={speed}&bearing={course}" \
+        f"&meshtastic_chan={i_chan}&meshtastic_topic={i_short_topic}&meshtastic_gateway={i_gateway}&meshtastic_hops={i_hops}"
 
-            try:
-                self.tx_to_traccar(query_string)
-            except ValueError:
-                logging.warning(f"id={dev_id}")
+        try:
+            self.tx_to_traccar(query_string)
+        except ValueError:
+            logging.warning(f"id={i_from}")
 
 
 
@@ -396,32 +376,6 @@ class Meshtastic2Traccar():
 
 
 
-    def poll(self):
-        page = requests.get(self.TraccarHost + "/api/devices?all=true", auth = HTTPBasicAuth(self.TraccarUser, self.TraccarPassword))
-        if page.status_code != 200:
-            logging.info("Traccar auth failed")
-            return
-
-        filterdict={}
-        for j in json.loads(page.content):
-            # print(json.dumps(j, indent=2))
-            if not j["disabled"]:
-                attributes = j["attributes"]
-
-                for att, value in attributes.items():
-                    if re.search("^" + self.TraccarKeyword + "[0-9]{0,1}$", att.lower()):
-                        nodeid = value.lower().strip()
-                        if re.search("^![0-9a-f]{8}$", nodeid):
-                            unid = j["uniqueId"]
-                            filterdict[nodeid] = filterdict.get(nodeid, []) + [unid]
-
-        logging.debug(f"Attributes: {filterdict}")
-        self.filter_dict = filterdict
-
-
-
-
-
 
 
 
@@ -454,18 +408,8 @@ if __name__ == '__main__':
     signal.signal(signal.SIGTERM, sig_handler)
     signal.signal(signal.SIGINT, sig_handler)
 
-    def OsmandURL(url):
-        u = urlparse(url)
-        u = u._replace(scheme="http", netloc=u.hostname+":5055", path = "")
-        return(urlunparse(u))
-
     config = {}
-    config["TraccarHost"] = os.environ.get("TRACCAR_HOST", DEFAULT_TRACCAR_HOST)
-    config["TraccarUser"] = os.environ.get("TRACCAR_USER", "")
-    config["TraccarPassword"] = os.environ.get("TRACCAR_PASSWORD", "")
-    config["TraccarKeyword"] = os.environ.get("TRACCAR_KEYWORD", DEFAULT_TRACCAR_KEYWORD)
-    config["TraccarInterval"] = int(os.environ.get("TRACCAR_INTERVAL", DEFAULT_TRACCAR_INTERVAL))
-    config["TraccarOsmand"] = os.environ.get("TRACCAR_OSMAND", OsmandURL(config["TraccarHost"]))
+    config["TraccarOsmand"] = os.environ.get("TRACCAR_OSMAND", DEFAULT_TRACCAR_OSMAND)
 
     config["MqttServer"] = os.environ.get("MQTT_SERVER")
     config["MqttPort"] = os.environ.get("MQTT_PORT")
@@ -475,10 +419,6 @@ if __name__ == '__main__':
 
 
     M2T = Meshtastic2Traccar(config)
-
-    sched = BackgroundScheduler()
-    sched.add_job(M2T.poll, 'interval', next_run_time=datetime.now(), seconds=config["TraccarInterval"])
-    sched.start()
 
     M2T.start()
 

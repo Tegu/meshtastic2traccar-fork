@@ -151,7 +151,7 @@ class Meshtastic2Traccar():
         if not mp.HasField("decoded"):
             return()
         
-        if not mp.decoded.portnum == portnums_pb2.POSITION_APP:
+        if not mp.decoded.portnum in (portnums_pb2.POSITION_APP, portnums_pb2.TELEMETRY_APP):
             return()
         
         pl = None
@@ -179,29 +179,43 @@ class Meshtastic2Traccar():
         logging.info(", ".join(map(str,[i_from, i_to, i_chan, i_gateway, i_id, i_short_topic, i_protocol])))
         # self.client.publish("test/json", json.dumps(msgjson))
 
-        lat = pl.latitude_i * 1e-7
-        lon = pl.longitude_i * 1e-7
-        alt = pl.altitude
-        
-        name = self.dec2hex(getattr(mp, "from"))
-        accuracy = int(23300 / 2 ** (max(pl.precision_bits, 10) - 10))
-        speed = pl.ground_speed
-        course = 0
-        fixTime =  pl.time
+        if mp.decoded.portnum == portnums_pb2.POSITION_APP:
+            lat = pl.latitude_i * 1e-7
+            lon = pl.longitude_i * 1e-7
+            alt = pl.altitude
 
-        params = {
-            "id": i_from,
-            "lat": lat,
-            "lon": lon,
-            "alt": alt,
-            "accuracy": accuracy,
-            "speed": speed,
-            "bearing": course,
-            "meshtastic_chan": i_chan,
-            "meshtastic_topic": i_short_topic,
-            "meshtastic_gateway": i_gateway,
-            "meshtastic_hops": i_hops,
-        }
+            name = self.dec2hex(getattr(mp, "from"))
+            accuracy = int(23300 / 2 ** (max(pl.precision_bits, 10) - 10))
+            speed = pl.ground_speed
+            course = 0
+            fixTime =  pl.time
+
+            params = {
+                "id": i_from,
+                "timestamp": fixTime,
+                "lat": lat,
+                "lon": lon,
+                "alt": alt,
+                "accuracy": accuracy,
+                "speed": speed,
+                "bearing": course,
+                "meshtastic_chan": i_chan,
+                "meshtastic_topic": i_short_topic,
+                "meshtastic_gateway": i_gateway,
+                "meshtastic_hops": i_hops,
+            }
+        elif mp.decoded.portnum == portnums_pb2.TELEMETRY_APP:
+            params = {
+                "id": i_from,
+                "timestamp": pl.time,
+                "batt": pl.device_metrics.battery_level,
+                "voltage": pl.device_metrics.voltage,
+                "meshtastic_chan": i_chan,
+                "meshtastic_topic": i_short_topic,
+                "meshtastic_gateway": i_gateway,
+                "meshtastic_hops": i_hops,
+            }
+
 
         try:
             self.tx_to_traccar(params)
